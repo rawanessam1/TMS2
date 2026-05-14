@@ -1,0 +1,82 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # CI — Install, Build & Validate
+  # ─────────────────────────────────────────────────────────────
+  ci:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      # ── Backend ───────────────────────────────────────────────
+      - name: Install Backend dependencies
+        working-directory: pern-mcp-starter/backend
+        run: npm ci
+
+      # Uncomment when you have backend tests:
+      # - name: Run Backend tests
+      #   working-directory: pern-mcp-starter/backend
+      #   run: npm test
+
+      # ── Frontend ──────────────────────────────────────────────
+      - name: Install Frontend dependencies
+        working-directory: pern-mcp-starter/frontend
+        run: npm ci
+
+      - name: Build Frontend
+        working-directory: pern-mcp-starter/frontend
+        run: npm run build
+
+      # ── Docker Compose validation ─────────────────────────────
+      - name: Validate docker-compose syntax
+        working-directory: pern-mcp-starter
+        run: docker compose config -q
+
+      # ── Pass the build to the deploy job ─────────────────────
+      - name: Upload frontend build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: pern-mcp-starter/frontend/dist/
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────
+  # CD — Deploy to Netlify (main branch pushes only)
+  # ─────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Netlify
+    needs: ci
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Download frontend build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist/
+
+      - name: Deploy to Netlify
+        uses: nwtgck/actions-netlify@v3.0
+        with:
+          publish-dir: dist/
+          production-deploy: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
